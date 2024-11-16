@@ -19,7 +19,6 @@ enum BfError {
 fn main() -> Result<(), BfError> {
     let mut args_iter = args().skip(1);
 
-    // we already checked arg count so this should be safe
     let filename = match args_iter.next() {
         Some(s) => s,
         None => return Err(BfError::BadArgCount),
