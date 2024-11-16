@@ -29,21 +29,21 @@ fn main() -> Result<(), Error> {
 
     let filename = args_iter.next().ok_or(Error::BadArgCount)?;
 
-    let program = &mut File::open(filename).map_err(Error::FileNotFound)?;
+    let mut program = File::open(filename).map_err(Error::FileNotFound)?;
     let program_len = program.metadata().map_err(Error::FileNotFound)?.len();
 
-    interpret(program, program_len).map_err(Error::Interpreter)
+    interpret(&mut program, program_len).map_err(Error::Interpreter)
 }
 
 fn interpret(program: &mut File, program_len: u64) -> Result<(), BfError> {
     let mut tape_index: usize = 0;
-    let tape = &mut vec![0u8; 256];
+    let mut tape = vec![0u8; 256];
 
-    let bracket_stack: &mut Vec<u64> = &mut Vec::new();
+    let mut bracket_stack: Vec<u64> = Vec::new();
 
     while program.stream_position().unwrap() < program_len {
-        let instruction_buffer = &mut [0u8];
-        program.read_exact(instruction_buffer).unwrap();
+        let mut instruction_buffer = [0u8];
+        program.read_exact(&mut instruction_buffer).unwrap();
 
         match instruction_buffer[0] {
             b'+' => tape[tape_index] = tape[tape_index].wrapping_add(1),
@@ -68,7 +68,7 @@ fn interpret(program: &mut File, program_len: u64) -> Result<(), BfError> {
 
                     while depth != 0 {
                         program
-                            .read_exact(instruction_buffer)
+                            .read_exact(&mut instruction_buffer)
                             .map_err(|_| BfError::UnmatchedStartBracket)?;
 
                         match instruction_buffer[0] {
@@ -90,10 +90,10 @@ fn interpret(program: &mut File, program_len: u64) -> Result<(), BfError> {
                 }
             }
             b',' => {
-                let input_buffer: &mut [u8] = &mut [0];
+                let mut input_buffer = [0u8];
 
                 io::stdin()
-                    .read_exact(input_buffer)
+                    .read_exact(&mut input_buffer)
                     .map_err(|e| match e.kind() {
                         io::ErrorKind::UnexpectedEof => BfError::EndOfInput,
                         _ => BfError::InputFailure,
