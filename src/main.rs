@@ -6,8 +6,6 @@ use std::{
 
 #[derive(Debug)]
 enum BfError {
-    BadArgCount,
-    FileNotFound,
     TapeUnderflow,
     UnmatchedStartBracket,
     UnmatchedEndBracket,
@@ -16,23 +14,25 @@ enum BfError {
     OutputFailure,
 }
 
-fn main() -> Result<(), BfError> {
+#[derive(Debug)]
+enum Error {
+    BadArgCount,
+    FileNotFound,
+    #[allow(dead_code)]
+    Interpreter(BfError),
+}
+
+fn main() -> Result<(), Error> {
     let mut args_iter = args().skip(1);
 
     let filename = match args_iter.next() {
         Some(s) => s,
-        None => return Err(BfError::BadArgCount),
+        None => return Err(Error::BadArgCount),
     };
 
-    let program = match read(filename) {
-        Ok(f) => f,
-        Err(_) => return Err(BfError::FileNotFound),
-    };
+    let program = read(filename).map_err(|_| Error::FileNotFound)?;
 
-    match interpret(&program) {
-        Ok(_) => Ok(()),
-        Err(e) => Err(e),
-    }
+    interpret(&program).map_err(Error::Interpreter)
 }
 
 fn interpret(program: &[u8]) -> Result<(), BfError> {
