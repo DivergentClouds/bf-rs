@@ -19,12 +19,11 @@ enum BfError {
 fn main() -> Result<(), BfError> {
     let mut args_iter = args().skip(1);
 
-    if args_iter.len() != 1 {
-        return Err(BfError::BadArgCount);
-    }
-
     // we already checked arg count so this should be safe
-    let filename = args_iter.next().unwrap();
+    let filename = match args_iter.next() {
+        Some(s) => s,
+        None => return Err(BfError::BadArgCount),
+    };
 
     let program = match read(filename) {
         Ok(f) => f,
