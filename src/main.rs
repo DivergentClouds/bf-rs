@@ -17,7 +17,8 @@ enum BfError {
 #[derive(Debug)]
 enum Error {
     BadArgCount,
-    FileNotFound,
+    #[allow(dead_code)]
+    FileNotFound(io::Error),
     #[allow(dead_code)]
     Interpreter(BfError),
 }
@@ -25,12 +26,9 @@ enum Error {
 fn main() -> Result<(), Error> {
     let mut args_iter = args().skip(1);
 
-    let filename = match args_iter.next() {
-        Some(s) => s,
-        None => return Err(Error::BadArgCount),
-    };
+    let filename = args_iter.next().ok_or(Error::BadArgCount)?;
 
-    let program = read(filename).map_err(|_| Error::FileNotFound)?;
+    let program = read(filename).map_err(Error::FileNotFound)?;
 
     interpret(&program).map_err(Error::Interpreter)
 }
