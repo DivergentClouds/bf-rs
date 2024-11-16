@@ -1,17 +1,19 @@
 use std::{
     env::args,
-    fs::read,
-    io::{self, Read, Write},
+    fs::File,
+    io::{self, Read, Seek, SeekFrom, Write},
 };
 
 #[derive(Debug)]
 enum BfError {
     TapeUnderflow,
-    UnmatchedStartBracket,
+    #[allow(dead_code)]
+    UnmatchedStartBracket(io::Error),
     UnmatchedEndBracket,
     EndOfInput,
     InputFailure,
-    OutputFailure,
+    #[allow(dead_code)]
+    OutputFailure(io::Error),
 }
 
 #[derive(Debug)]
@@ -28,23 +30,23 @@ fn main() -> Result<(), Error> {
 
     let filename = args_iter.next().ok_or(Error::BadArgCount)?;
 
-    let program = read(filename).map_err(Error::FileNotFound)?;
+    let program = &mut File::open(filename).map_err(Error::FileNotFound)?;
+    let program_len = program.metadata().map_err(Error::FileNotFound)?.len();
 
-    interpret(&program).map_err(Error::Interpreter)
+    interpret(program, program_len).map_err(Error::Interpreter)
 }
 
-fn interpret(program: &[u8]) -> Result<(), BfError> {
-    let mut program_counter: usize = 0;
+fn interpret(program: &mut File, program_len: u64) -> Result<(), BfError> {
     let mut tape_index: usize = 0;
-    let tape: &mut Vec<u8> = &mut vec![0; 256];
+    let tape = &mut vec![0u8; 256];
 
-    let bracket_stack: &mut Vec<usize> = &mut Vec::new();
+    let bracket_stack: &mut Vec<u64> = &mut Vec::new();
 
-    let mut stdin = io::stdin();
-    let mut stdout = io::stdout();
+    while program.stream_position().unwrap() < program_len {
+        let instruction_buffer = &mut [0u8];
+        program.read_exact(instruction_buffer).unwrap();
 
-    while program_counter < program.len() {
-        match program[program_counter] {
+        match instruction_buffer[0] {
             b'+' => tape[tape_index] = tape[tape_index].wrapping_add(1),
             b'-' => tape[tape_index] = tape[tape_index].wrapping_sub(1),
             b'>' => {
@@ -60,14 +62,17 @@ fn interpret(program: &[u8]) -> Result<(), BfError> {
                 tape_index -= 1;
             }
             b'[' => {
-                bracket_stack.push(program_counter);
+                bracket_stack.push(program.stream_position().unwrap());
 
                 if tape[tape_index] == 0 {
                     let mut depth: usize = 1;
 
                     while depth != 0 {
-                        program_counter += 1;
-                        match program[program_counter] {
+                        program
+                            .read_exact(instruction_buffer)
+                            .map_err(BfError::UnmatchedStartBracket)?;
+
+                        match instruction_buffer[0] {
                             b'[' => depth += 1,
                             b']' => depth -= 1,
                             _ => (),
@@ -77,40 +82,36 @@ fn interpret(program: &[u8]) -> Result<(), BfError> {
             }
             b']' => {
                 if tape[tape_index] != 0 {
-                    program_counter = match bracket_stack.last() {
-                        Some(s) => *s,
-                        None => return Err(BfError::UnmatchedEndBracket),
+                    if bracket_stack.is_empty() {
+                        return Err(BfError::UnmatchedEndBracket);
                     }
+                    _ = program.seek(SeekFrom::Start(*bracket_stack.last().unwrap()))
                 } else {
                     _ = bracket_stack.pop();
                 }
             }
             b',' => {
-                let input: &mut [u8] = &mut [0];
-                tape[tape_index] = match stdin.read_exact(input) {
-                    Ok(_) => input[0],
-                    Err(e) => match e.kind() {
-                        io::ErrorKind::UnexpectedEof => return Err(BfError::EndOfInput),
-                        _ => return Err(BfError::InputFailure),
-                    },
-                };
+                let input_buffer: &mut [u8] = &mut [0];
+
+                io::stdin()
+                    .read_exact(input_buffer)
+                    .map_err(|e| match e.kind() {
+                        io::ErrorKind::UnexpectedEof => BfError::EndOfInput,
+                        _ => BfError::InputFailure,
+                    })?;
+
+                tape[tape_index] = input_buffer[0];
             }
             b'.' => {
-                let output: &mut [u8] = &mut [tape[tape_index]];
-                match stdout.write_all(output) {
-                    Ok(_) => (),
-                    Err(_) => return Err(BfError::OutputFailure),
-                }
+                let output: &[u8] = &[tape[tape_index]];
+
+                io::stdout()
+                    .write_all(output)
+                    .map_err(BfError::OutputFailure)?;
             }
             _ => (),
         }
-
-        program_counter += 1;
     }
 
-    if bracket_stack.is_empty() {
-        Ok(())
-    } else {
-        Err(BfError::UnmatchedStartBracket)
-    }
+    Ok(())
 }
