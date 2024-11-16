@@ -7,8 +7,7 @@ use std::{
 #[derive(Debug)]
 enum BfError {
     TapeUnderflow,
-    #[allow(dead_code)]
-    UnmatchedStartBracket(io::Error),
+    UnmatchedStartBracket,
     UnmatchedEndBracket,
     EndOfInput,
     InputFailure,
@@ -70,7 +69,7 @@ fn interpret(program: &mut File, program_len: u64) -> Result<(), BfError> {
                     while depth != 0 {
                         program
                             .read_exact(instruction_buffer)
-                            .map_err(BfError::UnmatchedStartBracket)?;
+                            .map_err(|_| BfError::UnmatchedStartBracket)?;
 
                         match instruction_buffer[0] {
                             b'[' => depth += 1,
@@ -86,8 +85,8 @@ fn interpret(program: &mut File, program_len: u64) -> Result<(), BfError> {
                         return Err(BfError::UnmatchedEndBracket);
                     }
                     _ = program.seek(SeekFrom::Start(*bracket_stack.last().unwrap()))
-                } else {
-                    _ = bracket_stack.pop();
+                } else if bracket_stack.pop().is_none() {
+                    return Err(BfError::UnmatchedEndBracket);
                 }
             }
             b',' => {
