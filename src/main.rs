@@ -10,7 +10,8 @@ enum BfError {
     UnmatchedStartBracket,
     UnmatchedEndBracket,
     EndOfInput,
-    InputFailure,
+    #[allow(dead_code)]
+    InputFailure(io::Error),
     #[allow(dead_code)]
     OutputFailure(io::Error),
 }
@@ -81,10 +82,11 @@ fn interpret(program: &mut File, program_len: u64) -> Result<(), BfError> {
             }
             b']' => {
                 if tape[tape_index] != 0 {
-                    if bracket_stack.is_empty() {
-                        return Err(BfError::UnmatchedEndBracket);
-                    }
-                    _ = program.seek(SeekFrom::Start(*bracket_stack.last().unwrap()))
+                    _ = program
+                        .seek(SeekFrom::Start(
+                            *bracket_stack.last().ok_or(BfError::UnmatchedEndBracket)?,
+                        ))
+                        .map_err(|_| BfError::UnmatchedEndBracket)?;
                 } else if bracket_stack.pop().is_none() {
                     return Err(BfError::UnmatchedEndBracket);
                 }
@@ -96,7 +98,7 @@ fn interpret(program: &mut File, program_len: u64) -> Result<(), BfError> {
                     .read_exact(&mut input_buffer)
                     .map_err(|e| match e.kind() {
                         io::ErrorKind::UnexpectedEof => BfError::EndOfInput,
-                        _ => BfError::InputFailure,
+                        _ => BfError::InputFailure(e),
                     })?;
 
                 tape[tape_index] = input_buffer[0];
